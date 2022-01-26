@@ -1,0 +1,44 @@
+---
+title: "exploratory"
+author: "William Gerecke"
+date: "1/19/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(data.table)
+library(openxlsx)
+library(opendatatoronto)
+library(dplyr)
+library(tidyverse)
+```
+
+```{r}
+package <- show_package("0600cad8-d024-483b-a9a8-ecfc3e32e375") |>
+  list_package_resources() |>
+  filter(name == "annual-energy-consumption-data-2018") |>
+  get_resource()
+
+package
+```
+
+```{r}
+col_names <- c("Operation Name", "Operation Type", "Address", "City",
+               "Postal Code", "Total Floor Area", "Unit", "Avg hrs/wk",
+               "Annual Flow (Mega Litres)", "Electricity Quantity",
+               "Electricity Unit", "Natural Gas Quantity", "Natural Gas Unit")
+
+
+cleaned <- package[, 1:13] |>
+  slice(8:n())
+  
+cleaned <- cleaned |>
+  setnames(old = names(cleaned), new = col_names)
+
+cleaned
+```
+
