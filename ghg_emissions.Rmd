@@ -1,0 +1,525 @@
+---
+title: "Increasing Greenhouse Gas Emission Reporting in Toronto with Levels Decreasing Per-Operation"
+subtitle: "Reported Greenhouse Gas Emissions in Toronto from 2011 to 2018"
+author:
+  - "William Gerecke"
+thanks: "Code can be found at https://github.com/wlgfour/toronto-energy-consumption.git"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+abstract: "Greenhouse gas emissions have a significant impact on the global climate and are a key factor in climate change. This paper aims to examine the greenhouse gas emissions in Toronto and their change between the years 2011 and 2018. We examine the data and find that the total reported emissions in Toronto are increasing yearly, but on average public agencies are reporting decreases in their greenhouse gas emissions."
+bibliography: bibliography.bib
+output:
+  bookdown::pdf_document2: default
+---
+
+```{r, include=FALSE}
+# TODO
+# - readme
+# - code comments
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(opendatatoronto)
+library(patchwork)
+library(knitr)
+library(reshape2)
+library(janitor)
+library(kableExtra)
+library(sf)
+library(RColorBrewer)
+library(forcats)
+```
+
+```{r, include=FALSE}
+# read cleaned dataframes that can be generated using scripts/fetch_data.R
+load('outputs/raw_geocoded.RData')
+load('outputs/raw.RData')
+load('outputs/cleaned.RData')
+load('outputs/ward_tbl.RData')
+
+# load the shapefile for wards that is also downloaded with scripts/fetch_data.R
+ward_shp <- st_read('inputs/data/wards_dir/WARD_WGS84.shp') |>
+  select(ward=AREA_NAME)
+
+# just in case, format ghg_emissions_kg as a string in cleaned_geocoded
+# - an older version of fetch_data.R saved this column as a string
+cleaned_geocoded <- cleaned_geocoded |>
+  transform(ghg_emissions_kg = as.numeric(ghg_emissions_kg))
+```
+
+\newpage
+# Intro
+
+As of now, the world is starting to experience accelerating effects of climate change, such as melting ice caps, rising sea levels, global temperature increase, and increased frequency of extreme weather events. Preventing climate change has become a major global issue with significant debate around steps that can or should be taken to maintain a habitable Earth, but the Paris Agreement, an international treaty on climate change, set a framework for economic and social change in order to prevent climate change [@paris]. Part of the Paris Agreement addressed greenhouse gasses (GHGs), which are strongly linked to global climate change.
+
+In 2009, the city of Toronto published the Green Energy Act [@econs] which was taken into force in 2011. The Green energy act requires public agencies (or "operations") to report their GHG emissions every year to the city of Toronto. In this paper, we explore GHG emissions in Toronto between the years 2011 and 2018 and observe that the total amount of recorded year-to-year GHG emissions increases. However, we also find that individual operations have recorded yearly decreases in emissions between the years of 2012 and 2015, but stagnation in the reduction of GHG emissions after 2015. We also see that, while the change in emissions stagnates around 2015, operations have reported an overall decrease in emissions between 2011 and 2018.
+
+We discuss the efficacy of the dataset in Section \@ref(discussion) and suggest that stricter regulations on reporting would lead to more comprehensive results regarding GHG emissions in Toronto. Beyond that, it will be important to assess the impact of the Paris Agreement on reported GHG emissions when data beyond 2018 becomes available because the Paris Agreement came into force in 2020.
+
+In this paper, we discuss the data in Section \@ref(data) including the software used (Section \@ref(software)), source of the data (Section \@ref(data-source)), and methods used to clean the data (Section \@ref(data-cleaning)). In Section \@ref(discussion) we comment on the data (Section \@ref(comments-on-the-data)), discuss the broader impact of GHGs (Section \@ref(broader-impact-of-ghg-emissions)), and discuss next steps (Section \@ref(next-steps)). In Appendix \@ref(packages) we note all R packages that were used to generate this report. 
+
+
+# Data
+
+## Software
+
+This project uses the statistical programming language R [@citeR] to generate graphics and process data. The data is managed using `tidyverse` and processing is done with significant use of `dplyr` verbs [@tidy; @dplyr]. `ggplot2` and `patchwork` are used to generate graphics [@ggplot; @patchwork]. For geometry-specific processing, the `sf` package is used [@sf]. The data is downloaded from the Open Data Toronto Portal using the `opendatatoronto` package [@odt]. The `tidygeocoder` package is used to geocode addresses present in the downloaded dataset [@tgeo]. For a complete list of software that was used for this project, see Appendix A.
+
+
+## Data Source
+
+Regarding this project there are two datasets of interest, both of which come from the Open Data Toronto Portal. The first is the Annual Energy Consumption dataset which contains columns for the energy consumption of individual buildings in Toronto that are required by Ontario Regulation 397/11, the Green Energy Act (2009) [@econs], to report their GHG emissions. Specifically, this dataset contains annual `xlsx` spreadsheets from 2011-2018 that have columns with the building: name; address; floor area; mega liters of water or sewage treated; amount of energy purchased in the form of electricity and natural gas; and GHG emissions. As seen in Figure \@ref(fig:feature-plot), there are significantly more reports in and after the year 2014 and the range of values reported is fairly large with values for GHG emissions somewhat evenly distributed on the logarithmic scale, but more concentrated at the upper end. The energy consumption, floor area, and GHG emissions are plotted on a logarithmic scale because these features vary most significantly in their order of magnitude.
+
+```{r feature-plot, echo=FALSE, warning=FALSE, out.width='60%', fig.align='center', fig.width=8, fig.height=6, fig.cap='The figure shows reports for GHG emissions, electricity consumption, and floor area by year on a logarithmic scale. Each dot represents an operation that reported in the year specified on the x-axis.'}
+ghg <- cleaned_geocoded |>
+  ggplot(mapping = aes(x = year, y = ghg_emissions_kg, group=year)) +
+  geom_boxplot() +
+  geom_jitter(alpha=0.05, width=0.2, height=0) +
+  theme_classic() +
+  labs(
+    x = 'Year',
+    y = 'GHg emissions (kg)'
+  ) +
+  scale_y_continuous(trans='log', labels=function(x) sprintf("%.1e", x)) +
+  theme(axis.text.y = element_text(angle = 60, vjust = 0.5, hjust=0.5))
+
+ele <- cleaned_geocoded |>
+  ggplot(mapping = aes(x = year, y = electricity_wh, group=year)) +
+  geom_boxplot() +
+  geom_jitter(alpha=0.05, width=0.2, height=0) +
+  theme_classic() +
+  labs(
+    x = 'Year',
+    y = 'Electricity consumption (Wh)'
+  ) +
+  scale_y_continuous(trans='log', labels=function(x) sprintf("%.1e", x)) +
+  theme(axis.text.y = element_text(angle = 60, vjust = 0.5, hjust=0.5))
+
+flr <- cleaned_geocoded |>
+  ggplot(mapping = aes(x = year, y = floor_area_sf, group=year)) +
+  geom_boxplot() +
+  geom_jitter(alpha=0.05, width=0.2, height=0) +
+  theme_classic() +
+  labs(
+    x = 'Year',
+    y = 'Floor area (sq. ft.)'
+  ) +
+  scale_y_continuous(trans='log', labels=function(x) sprintf("%.1e", x)) +
+  theme(axis.text.y = element_text(angle = 60, vjust = 0.5, hjust=0.5))
+
+(ele + flr) / ghg
+```
+
+The second dataset is called City Wards and it contains a shape file (`.shp` extension) that describes the 25 municipal wards of Toronto. The data contains the name of each ward as well as its geospatial information. The geospatial information was used to allocate a ward for each operation in the dataset.
+
+In order to identify which ward each building belongs to, the building coordinates were required (latitude and longitude). The coordinates were obtained by using the `tidygeocoder` package. The `tidygeocoder` package is free and open source, but the geocoding API has a rate limit of one request per second.
+
+
+## Data Cleaning
+
+The Annual Energy Consumption dataset is provided in the form of several `xlsx` spreadsheets with a preamble at the top and grouped cells that describe column labels. The top rows (including column labels) were discarded and columns were manually assigned the correct labels. Additionally, there was one file containing spreadsheets for the years 2011-2014 which had to be separated. There were several paired columns where one contained a number and the other contained a unit. These were appropriately converted to the same unit using standard unit conversions. Finally, some postal codes contained a space in the middle (e.g. `M4Y 0A9`) and some did not. For the purpose of geocoding, these had to be converted to the format with a space^[Regex: `[A-Z][0-9][A-Z] [0-9][A-Z][0-9]`].
+
+```{r yearly-reps, echo=FALSE, fig.align='center'}
+# fig.cap='Number of yearly reports collected with the number of un-geocoded addresses shown by year.'
+
+rgeo <- raw_geocoded |>
+  mutate(geocode_succ = if_else(!is.na(longitude), 'success', 'failure'))
+
+#rgeo |>
+#  ggplot(mapping = aes(x = year, fill=geocode_succ)) +
+#  geom_bar() +
+#  theme_minimal() +
+#  labs(
+#    x = 'Year reported',
+#    y = 'Number of reports',
+#    fill = 'Geocode status'
+#  )
+
+by_year = rgeo |>
+  count(year, geocode_succ) |>
+  dcast(geocode_succ ~ year, value.var=c('n')) |>
+  adorn_totals(where=c('row', 'col'))
+
+by_year |>
+  kable(
+    col.names = c(c("Geocode status"), colnames(by_year)[2:9], 'Total'),
+    booktabs = TRUE, 
+    linesep = '',
+    format.args = list(big.mark = ","),
+    caption = 'The table shows the number of successful and unsuccessful gecoded addresses for each year.'
+  ) |>
+  row_spec(2, hline_after=T) |>
+  column_spec(10, border_left = TRUE, bold = TRUE)
+```
+
+In order to identify which wards each building belongs to, they were geocoded by address, postal code, city, and country using OpenStreetMap [@osm]. There were `r length(unique(raw_geocoded$address_snth))` unique addresses, `r sum(is.na(raw_geocoded$latitude))` of which could not be geocoded for various reasons, such as `'Various addresses'` in the address column. In order to reduce the strain on the Nomination API, only unique addresses were geocoded which reduced the number of necessary calls to the API by `r nrow(raw_geocoded) - length(unique(raw_geocoded$address_snth))`. The number of yearly reports and a summary of the geocoding process can be seen in Table \@ref(tab:yearly-reps).
+
+```{r ward-reps, echo=FALSE, out.width='70%', fig.align='center', fig.width=8, fig.height=4, fig.cap='The figure shows the number of reports each year for each ward. There is a significant increase in reports across all wards between 2013 and 2014.'}
+ward_by_year <- cleaned_geocoded |>
+  count(ward, year)
+  
+ward_by_year |>
+  ggplot(mapping = aes(x = year, y = n, color=ward)) +
+  geom_point() +
+  geom_line(alpha=0.25, size=1.1) +
+  theme_classic() +
+  theme(legend.position = 'bottom', legend.text = element_text(size=7)) +
+  labs(
+    x = 'Year',
+    y = 'Number of reports',
+    color = 'Ward'
+  )
+```
+
+Each building in the dataset was assigned a ward based on which ward's boundaries the geocoded point for that building intersected with. At the end of the cleaning process, excess columns were dropped, rows with invalid data were dropped, and the dataset was saved. The number of buildings that submitted reports in each ward year-over-year can be seen in Figure \@ref(fig:ward-reps). There is a large increase in reports in all wards in the year 2014. Such a significant change in reporting is likely not due to an equally significant increase in the number of public agencies in Toronto, but potentially a phased-in requirement for public agencies to submit these reports^[This is not mentioned in the actual Green Energy Act, but it is possible that there is an arbitrary grace-period for Toronto regulations.], but there are also other reasons that this could have happened.
+
+
+# Results
+
+## Yearly emissions
+
+In Figure \@ref(fig:ghg-by-year) we can see that the total reported GHG emissions increases year after year with only some small decreases when the change in number of reports is low, but even between 2017 and 2018 where the number of reports does not change, the total reported amount of GHG emissions increases. It is likely that this is due to the wild changes in number of reports submitted by public agencies in Toronto and which buildings are submitting reports rather than a change in the underlying GHG emissions released in Toronto.
+
+```{r ghg-by-year, echo=FALSE, out.width='70%', fig.align='center', fig.width=8, fig.height=3.5, fig.cap='The figure shows the total reported GHG emissions by year. Point size represents the increase in the number of reports, and color indicates an increase, decrease, or no change with respect to the number of reports.'}
+ghg_by_year <- cleaned_geocoded |>
+  group_by(year) |>
+  summarise(total_ghg = sum(ghg_emissions_kg), n = n())
+
+ghg_by_year <- ghg_by_year |>
+  mutate(
+    diff = n - (lag(ghg_by_year)$n |> replace_na(0)),
+    diff_pct = 100 * diff / (lag(ghg_by_year)$n |> replace_na(0)),
+    ddir = case_when(diff_pct > 0 ~ 'increase',
+                     diff_pct < 0 ~ 'decrease',
+                     TRUE ~ 'no change')
+  )
+
+ghg_by_year |>
+  ggplot(aes(x=year, y=total_ghg)) +
+  geom_line(size=1.1, alpha=0.2) +
+  geom_point(aes(color=ddir, size=diff_pct), alpha=0.5, stroke=0, shape=16) +
+  theme_minimal() +
+  labs(
+    x = 'Year',
+    y = 'Total GHG emissions (kg)',
+    color = 'Change in number of reports',
+    size = 'Change in number of reports (%)'
+  ) +
+  scale_size_continuous(range=c(2.5,6), labels=function(x) sprintf("%d%%", x))
+
+```
+
+In order to get a more clear sense of the GHG emission trends in Toronto, we can look at the change in GHG emissions reported by each individual operation by looking at $\Delta GHG_y$, or the amount that an operation's GHG emissions have changed in year $y$ as seen in Equation \@ref(eq:dghg) where $GHG_y$ indicates an operation's GHG emissions in year $y$. If we aggregate $\Delta GHG_y$ over ward, as seen in Figure \@ref(fig:dghg-ward), we can see that operations who reported in 2011 and 2012 reported an increase in the total amount of GHG emissions released, but operations who reported from 2012 and 2014 saw a significant decrease in total GHG emissions, with a small rebound in 2015. Other than this, though, there are no significant trends in the total amount of change in GHG emissions reported per ward. That is, the amount of GHG emissions that operations in Toronto reported between the years 2016 and 2018 were relatively stable.
+
+\begin{equation}
+  \Delta GHG_y=GHG_y - GHG_{y-1} (\#eq:dghg)
+\end{equation}
+
+```{r dghg-ward, echo=FALSE, out.width='70%', fig.align='center', fig.width=8, fig.height=4.5, fig.cap='In the figure, $\\Delta GHG_y$ is aggregared for each operation by ward and plotted against year. The figure gives insight into the change in total GHG emissions in each ward by year.'}
+
+# 
+ghg_change <- cleaned_geocoded |>
+  unique() |>
+  group_by(operation_name) |>
+  group_modify(function (.x, .y) {
+    .x <- .x[order(.x$year),]
+    .lx <- lag(.x)
+    .res <- .x |>
+      mutate(
+        dy = year - .lx$year,
+        dghg = ghg_emissions_kg - .lx$ghg_emissions_kg,
+      ) |>
+      drop_na()
+  }) |>
+  filter(dy > 0)
+
+ghg_change |>
+  group_by(year, ward) |>
+  summarise(tot = sum(dghg), floor = sum(floor_area_sf), .groups = 'drop') |>
+  #filter(year >= 2015) |>
+  ggplot(aes(x=year, y=tot, color=ward)) +
+  geom_line(alpha=0.25, size=0.5) +
+  geom_point(alpha=0.4) +
+  theme_classic() +
+  theme(legend.position = 'bottom', legend.text = element_text(size=7)) +
+  labs(
+    x = 'Year',
+    y = 'Change in GHG emissions (kg)',
+    color = 'Ward'
+  )
+
+
+```
+
+In Figure \@ref(fig:dghg-ward) we can see total yearly change in GHG emissions which is important to the overall environmental impact, but this still doesn't give much insight into the amount that individual operations are decreasing their GHG emissions. The problem is that the total amount of GHG emissions in a ward could easily be swayed by large operations significantly decreasing emissions. For example, Figure \@ref(fig:feature-plot) indicates that there are some operations with at least 3 to 4 orders of magnitude more GHG emissions than other operations. If one of the larger operations went out of business, but the smaller operations on average increased their GHG emissions, it could easily appear as an overall decrease in emissions. This is bad, however, because there could be a significant number of operations increasing their environmental footprint rather than working to decrease it. Similarly, a large operation could make it seem that operations in a ward are increasing their emissions even if most of the operations are actually decreasing them.
+
+In order to make it easier to examine the trends in GHG emissions from all operations, including smaller operations, we can look at $\frac{\Delta GHG_y}{Fl_y}$ where $Fl_y$ is the operation's reported floor area in year $y$ (square feet). Again in Figure \@ref(fig:sdghg-ward) we see that on average, most operations were increasing their emissions from 2011 to 2012 when mandatory reporting began, but quickly decreased GHG emissions in 2013 and 2014. Beyond 2015 though, there is very little change in emissions across all wards.
+
+```{r sdghg-ward, echo=FALSE, out.width='70%', fig.align='center', fig.width=8, fig.height=4.5, fig.cap='In the figure, $\\Delta GHG_y$ is divided by the operation\'s floor area, aggregared for each operation by ward, and plotted against year. We can see more clearly the change in emissions for individual operations.'}
+ghg_change |>
+  
+  # 
+  group_by(year, ward) |>
+  summarise(
+    tot = sum(dghg),
+    floor = sum(floor_area_sf),
+    ghg_var=var(dghg),
+    dghg_range=max(dghg/floor_area_sf) - min(dghg/floor_area_sf),
+    .groups = 'drop') |>
+  ggplot(aes(x=year, y=tot / floor, color=ward, size=dghg_range)) +
+  geom_line(alpha=0.15, size=1) +
+  geom_point(alpha=0.3, size=1.5) +
+  theme_classic() +
+  theme(legend.position = 'bottom', legend.text = element_text(size=7), legend.direction='horizontal', legend.box='vertical') +
+  labs(
+    x = 'Year',
+    y = 'Normalized GHG emissions (kg/sf)',
+    color = 'Ward',
+    size = 'Range of GHG change'
+  )
+
+
+```
+
+In Figure \@ref(fig:ghg-by-year) we can see that year after year, there is a significant increase in GHG emissions in Toronto's wards. This is further supported by Figure \@ref(fig:dghg-ward) where we see that there was only a significant decrease in the amount of GHG emissions that each operation produced in 2014, and for the most part operations maintained constant levels of emissions. This means that any growth in the amount of operations in Toronto will necessarily translate to an increase in total GHG levels. Considering that the total GHG emissions in each ward could be dominated by large operations, we consider a standardized version of $\Delta GHG_y$ which is plotted in Figure \@ref(fig:sdghg-ward). Here we only see a change in GHG levels in the early 2010s, but this trend is suppressed by the increase in operations who logged GHG emissions in 2014 (Table \@ref(tab:yearly-reps)). While the operations that decreased emissions from 2012 to 2014 may have continued to do so, the overall trend in the mid to late 2010s was that the GHG emissions of each operation stabilized. While this means that individual operations were not increasing their GHG emissions, it is important to note that this means that operations were not improving their emission levels.
+
+
+## Cumulative emissions
+
+While it is important to understand the yearly change in GHG emissions in order to focus on progressing towards clean and sustainable practices, it is also important to examine how much progress has been made so far as well as the impact on the environment that has already been inflicted. One of the reasons that this is important is that policy makers can adjust and form new plans with the purpose of reducing GHG emissions by looking at the total reduction in emissions so far. This also allows researchers to forecast the effects of GHG emissions on the plant and it's population by looking at the cumulative release of GHGs into the atmosphere.
+
+```{r, include=FALSE}
+
+# calculate cumulative ghg for each ward/year combo
+cum_ghg <- cleaned_geocoded |>
+  
+  # fill missing ward/year combinations with 0
+  complete(ward, year) |>
+  mutate(ghg_emissions_kg = if_else(is.na(ghg_emissions_kg), 0, ghg_emissions_kg)) |>
+  
+  # extract total ghg per year/ward
+  group_by(ward, year) |>
+  summarize(tot_ghg = sum(ghg_emissions_kg), .groups='drop') |>
+  
+  # calculate cumulative ghgs for each ward
+  group_by(ward) |>
+  summarise(
+    cum_ghg = cumsum(tot_ghg),
+    tot_emiss = max(tot_ghg),
+    year = year,
+    min_year = min(year),
+    .groups='drop')
+
+
+# extract the cumulative GHG emissions for some key years
+
+ghg_2011 <- cum_ghg |>
+  filter(year == 2011) |>
+  select(cum_ghg) |>
+  sum()
+
+ghg_2014 <- cum_ghg |>
+  filter(year == 2014) |>
+  select(cum_ghg) |>
+  sum()
+
+ghg_2018 <- cum_ghg |>
+  filter(year == 2018) |>
+  select(cum_ghg) |>
+  sum()
+```
+
+Figure \@ref(fig:cum-ghg) illustrates the cumulative reported GHG emissions from 2011 to 2018 in Toronto. Subplot A makes the compounding nature of the information shown in Figure \@ref(fig:ghg-by-year) abundantly clear. That is, even seemingly small or large, but individual increases in emissions lead to significant increases in the total amount of emissions when compounded over several years. We can see this concretely in the `r sprintf("%.0f%%", 100 * (ghg_2014 - ghg_2011) / ghg_2011)` increase in emissions between 2011 and 2014, and another `r sprintf("%.0f%%", 100 * (ghg_2018 - ghg_2014) / ghg_2014)` increase in emissions between 2014 and 2018 with a total change between 2011 and 2018 of `r sprintf("%.0f%%", 100 * (ghg_2018 - ghg_2011) / ghg_2011)`. We notice this significant change in emissions despite almost no change in operations' GHG emissions between 2014 and 2018 as seen in Figures \@ref(fig:dghg-ward) and \@ref(fig:sdghg-ward) as well as very little change in yearly emissions as seen Figure \@ref(fig:ghg-by-year).
+
+```{r cum-ghg, echo=FALSE, out.width='100%', fig.align='center', fig.width=12, fig.height=5, fig.cap='In Figure A we can see the cumulative emissions for each ward stacked, so the total cumulative emissions are shown. In figure B we can see the cumulative emissions for each ward shown on a choropleth.'}
+tot_change_map <- ward_shp |>
+  left_join(cleaned_geocoded |>
+    complete(ward, year) |>
+    mutate(ghg_emissions_kg = if_else(is.na(ghg_emissions_kg), 0, ghg_emissions_kg)) |>
+    group_by(year, ward) |>
+    summarize(tot_ghg = sum(ghg_emissions_kg), .groups='drop') |>
+    filter(year %in% c(2011, 2013, 2014, 2018)),
+    by='ward'
+   ) |>
+  ggplot(aes(fill=tot_ghg)) +
+  geom_sf(color=alpha('black', 0.05), lwd=0.25) +
+  scale_fill_distiller(palette = "YlOrBr", direction=1) +
+  theme_classic() +
+  theme(axis.text.x= element_text(angle=45, vjust = 0.5, hjust=0.5)) +
+  facet_wrap(vars(year), ncol=2) +
+  theme(legend.position = 'bottom', legend.text = element_text(angle=45, vjust = 0.5, hjust=0.5)) +
+  labs(
+    x = 'Longitude',
+    y = 'Latitude',
+    fill = 'Cumulative GHG\nemissions',
+    title = 'B'
+  )
+
+tot_change_area <- cum_ghg |>
+  mutate(ward = fct_reorder(ward, desc(-tot_emiss))) |>
+  ggplot(aes(x=year, y=cum_ghg, fill=ward)) +
+  geom_area(color=alpha('white', 0.15), lwd=0.2) +
+  theme_classic() +
+  theme(legend.position = 'bottom', legend.text = element_text(size=6), legend.direction='horizontal', legend.box='vertical') +
+  labs(
+    x = 'Year',
+    y = 'Cumulative GHG emissions (kg)',
+    color = 'Ward',
+    size = 'Range of GHG change',
+    title = 'A'
+  )
+
+tot_change_area + tot_change_map +
+  plot_layout(widths = c(3, 2))
+```
+
+Figure \@ref(fig:cum-ghg).B shows the cumulative emissions in each ward starting at 2011 through to 2018. We can see that some wards have a significantly larger concentration of GHG emissions than other wards, which could indicate the need for research into the health and environmental impacts of GHGs in these wards. The effects of GHGs is discussed more in Section \@ref(discussion).
+
+```{r, include=FALSE}
+
+cumulative_dghg <- ward_shp |>
+  
+  # join the dataframe of interest with the geospatial data for each ward
+  left_join((ghg_change |>
+    
+    # get the total delta ghg for each ward
+    group_by(ward, year) |>
+    summarize(
+      tot_dghg = sum(dghg),
+      tot_ghg = sum(ghg_emissions_kg),
+      .groups='drop'
+    ) |>
+    
+    # fill incomplete wards and year so they don't appear empty on the map
+    complete(ward, year) |>
+    mutate(
+      tot_dghg = if_else(is.na(tot_dghg), 0, tot_dghg),
+      tot_ghg = if_else(is.na(tot_ghg), 1, tot_ghg)
+    ) |>
+    
+    # get cumulative counts for each ward and filter years of interest
+    group_by(ward) |>
+    summarise(
+      cum_dghg = cumsum(tot_dghg),
+      cum_ghg = cumsum(tot_ghg),
+      
+      year = year,
+      tot_ghg = tot_ghg,
+      min_year = min(year),
+      .groups='drop') |>
+      filter(year %in% c(2012, 2014, 2016, 2018))),
+    by='ward'
+  )
+
+best_ward <- (cumulative_dghg |>
+  mutate(pdg = cum_dghg / tot_ghg) |>
+  filter(year == 2018, pdg <= 0.1 + min(pdg)))$ward
+```
+
+
+We can also look at the cumulative change in GHG emissions to assess the total improvement by ward. Figure \@ref(fig:cum-ghg-change) shows the cumulative change in GHG emissions as a percentage of that year's emissions. This way, we can see how much a ward has decreased their emissions relative to the total amount of emissions that year. For example, we can see that by 2018, operations in `r best_ward` had decreased their emissions by about as many kilograms of GHGs as they released in 2018. In other words, if operations in `r best_ward` had not decreased emissions between 2011 and 2018, `r best_ward` would have released at least twice as many kilograms of GHGs in 2018 as it did. Overall, we can see that after 2014, the amount that operations were improving their emissions could not catch up to the rate that new operations were reporting emissions, however, there was still a small net improvement in GHG emissions.
+
+```{r cum-ghg-change, echo=FALSE, out.width='100%', fig.align='center', fig.width=12, fig.height=5, fig.cap='The figure shows a coropleth of the cumulative change in GHG emissions as a percentage of the cumulative emissions in that year. This shows how much each ward has improved their emissions relative to their emissions in the year of interest.'}
+# plot cumulative delta ghg on a map for years of interest
+cumulative_dghg |>
+  ggplot(aes(fill=cum_dghg / tot_ghg)) +
+  geom_sf() +
+  facet_wrap(vars(year)) +
+  scale_fill_distiller(
+    palette = "Spectral",
+    direction=-1,
+    limits=c(-1, 1) * max(abs(cumulative_dghg$cum_dghg / cumulative_dghg$tot_ghg)),
+    labels=function(x) sprintf("%.0f%%", 100 * x)
+  ) +
+  theme_classic() +
+  theme(axis.text.x= element_text(angle=45, vjust = 0.5, hjust=0.5)) +
+  facet_wrap(vars(year), ncol=2) +
+  labs(
+    x = 'Longitude',
+    y = 'Latitude',
+    fill = 'Change in GHG emissions\nas a percentage of cumulative\nemissions'
+  )
+```
+
+
+Between Figures \@ref(fig:cum-ghg) and \@ref(fig:cum-ghg-change), we can see that despite the fact that reported GHG emissions in Toronto have increased at an increasing rate between 2011 and 2018, there is still a net improvement in emissions on an operation-specific basis. If we make the naive and hopeful assumption that no new operations have been created and the only reason new operations are appearing is because they had not logged emissions in previous years, this actually indicates a decrease in the underlying emissions in Toronto. This is however, most likely not 100% true, but the question remains: what is the net change in underlying emissions in Toronto?
+
+With more strict reporting policies, the government of Toronto could require all operations to report emissions which would allow us to directly calculate the net improvement in emissions. As of now, with the annual Energy Consumption dataset, we are left with the information that net reported GHG emissions have increased consistently (Figure \@ref(fig:ghg-by-year)) and that operations who reported their emissions more than once have decreased their emissions (Figure \@ref(fig:cum-ghg-change)). More simply: the total reported emissions are still getting worse, but each operation is reporting improvements in their emissions. 
+
+
+# Discussion
+
+## Comments on the data
+
+During the data cleaning process, there were many dropped values. Some of these were due to the data points being out of the bounds that were being considered (Toronto's 25 wards), but there were other reasons that some values were dropped. The next most significant reason that some values were dropped is that they had invalid data (ex: `N/A` under the floor area column). This cold have introduced bias into the results by way of systematically excluding operations where certain fields do not apply, or operations that made the same error when recording their emissions each year. The remaining values that were dropped where values that could not be geocoded. Without having looked closely at the similarities within this subset of observations, this could have caused bias by excluding certain neighborhoods, or streets. There were also operations that submitted `Various Locatinos` as their address (ex: `WPC Service Chambers`)) which excluded that operation from analysis in every year that they reported that address.
+
+Beyond dropped values, the Green Energy Act only requires operations that meet certain requirements to report their results, but allow any operation to report results. This means that the dataset is inherently biased, for example, it is possible that a significant amount of the observations come from operations who are not required to report emissions, but do because they have low emissions while operations with higher amounts of emissions refrain from reporting. It is also possible that the operations who are required to report are under different legal restrictions than operations that are not required to report. This means that the population of operations who are required to report is completely different from that of the operations who are not required to report emissions.
+
+## Broader impact of GHG emissions
+
+Beyond the immediate concerns of energy consumption and resource allocation, the operations described by the Green Energy Act have a significant environmental footprint by of GHG emissions and other factors. GHG emissions specifically have been shown to have significant ramifications for the economy, agriculture, the environment, and the health of people and animals.
+
+GHG emissions have been monitored as early as the 1990s and a study by @d2004 looked at the effects of GHGs on the economy and its relationship to global agriculture. They found that GHG emissions, such as $\text{CO}_2$, have a definitive effect on the global economy and agriculture. Darwin observed that various factors such as $\text{CO}_2$ fertilization and the relationship between GHGs and global temperature increase lead to increased crop production which also had a positive effect on global economic conditions, which both seem to be positive effects.
+
+Other studies, however, have indicated that increased amounts of GHGs in the atmosphere lead to more negative outcomes. @x2020 suggested that the significant increase in wild fires across the globe are synergistic with the increase in global temperature and GHGs. @x2020 also examined the short and long term effects of GHGs and wild fires on human health, observing short-term as well as long-term effects on health such as decreased lung capacity, and increased risk for disease or death.
+
+While there are many different effects of GHGs in the atmosphere that can have positive and negative impacts, global efforts have been taken to reduce the amount of GHG emissions in order to prevent catastrophic climate change. @m2020 used sensitivity analysis to support the claim that "anthropogenic CO2 emissions from people (cars, households) would deescalate the consequences of [GHG emissions]," but "emissions are mostly associated with industries, which can be reduced if local Government will want to achieve the Paris Agreement goal." Toronto has taken steps to monitor and reduce GHG emissions with the Green Energy Act [@econs], but in recent years the data suggests that the reduction in emissions has stagnated.
+
+
+## Next Steps
+
+The Paris Agreement [@paris] presented by the United Nations is a legally binding international treaty with the goal of combating and minimizing the damages caused by climate change. While the treaty was Published in 2015, it only came into force in 2020. By the nature of the Green Energy Act, public agencies in Toronto have not yet been required to make their GHG emissions after 2018 public. In the coming years when emissions for the year 2020 and years following it, it will be crucial to monitor the effects of the Paris Agreement on GHG emissions in all parts of the world, especially centers for industry [@m2020].
+
+
+\clearpage
+# References
+
+<div id="refs"></div>
+
+
+
+
+\newpage
+# (APPENDIX) Appendix {-} 
+
+# Packages
+
+`knitr` and `bookdown` were used to generate the pdf output of this report [@knitr; @bookdown].
+
+`dplyr` was used heavily to process dataframes using functions such as `mutate`, `summarise`, and `filter` [@dplyr].
+
+Functions and packages from `tidyverse` were used throughout the code [@tidy].
+
+`tidygeocoder` was used to geocode addresses so that they could be allocated to a ward in Toronto [@tgeo].
+
+`opendatatoronto` was used to obtain both of the datasets of interest in this paper [@odt].
+
+`janitor` was used in preprocessing of the data to auto-format column names and some values [@janitor].
+
+`reshape2` was used to reshape data for Table \@ref(tab:yearly-reps) [@reshape2].
+
+`kableExtra` was used to format Table \@ref(tab:yearly-reps) as well as add the marginal distributions [@kableExtra].
+
+`sf` was used to read shapefiles for Toronto wards, to intersect ward geometries with address coordinates, as well as to plot the coropleths. 
+
+`ggplot2`, `patchwork`, and `RColorBrewer` were used to generate the plots [@ggplot; @patchwork; @RColorBrewer].
+
+`forcats` was used to change the order of `levels` of a dataframe in a functional manner [@forcats].
+
+`stringr` were used in the data cleaning process for string operations with greater efficiency [@stringr].
+
+
+
+
+
+
+
+
+
+

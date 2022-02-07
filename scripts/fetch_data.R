@@ -31,7 +31,7 @@ shp_file <- "inputs/data/wards_dir/WARD_WGS84.shp"
 wards <- st_read(shp_file)
 ward_tbl <- wards %>%
   st_drop_geometry()
-save(ward_tbl, file='inputs/data/cleaned/ward_tbl.RData')
+save(ward_tbl, file='outputs/ward_tbl.RData')
 
 # plot the map
 ggplot(wards) +
@@ -116,7 +116,7 @@ sum(is.na(geocoded$latitude))
 view(latlon[is.na(latlon$latitude),])
 
 raw_geocoded <- geocoded
-save(raw_geocoded, file='inputs/data/cleaned/raw_geocoded.RData')
+save(raw_geocoded, file='outputs/raw_geocoded.RData')
 
 # plot the geocoded points on the toronto wards
 ggplot(wards) +
@@ -167,8 +167,8 @@ ggplot(wards) +
 
 # finally, save the dataset
 dir.create('inputs/data/cleaned')
-save(raw, file='inputs/data/cleaned/raw.RData')
-save(cleaned_geocoded, file='inputs/data/cleaned/cleaned.RData')
+save(raw, file='outputs/raw.RData')
+save(cleaned_geocoded, file='outputs/cleaned.RData')
 
 
 
