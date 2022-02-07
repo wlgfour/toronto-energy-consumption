@@ -3,7 +3,7 @@
 #          Use osm to geocode buildings and find which wards they are in.
 # Author: William Gerecke
 # Email: wlgfour@gmail.com
-# Date: 1/26/2022
+# Date: 2/6/2022
 # Prerequisites: An older version required a Google Maps API key, but osm allows
 #                free API calls so the only prerequisites are the packages
 #                loaded below.

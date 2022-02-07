@@ -11,12 +11,6 @@ output:
   bookdown::pdf_document2: default
 ---
 
-```{r, include=FALSE}
-# TODO
-# - readme
-# - code comments
-```
-
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -77,6 +71,8 @@ This project uses the statistical programming language R [@citeR] to generate gr
 Regarding this project there are two datasets of interest, both of which come from the Open Data Toronto Portal. The first is the Annual Energy Consumption dataset which contains columns for the energy consumption of individual buildings in Toronto that are required by Ontario Regulation 397/11, the Green Energy Act (2009) [@econs], to report their GHG emissions. Specifically, this dataset contains annual `xlsx` spreadsheets from 2011-2018 that have columns with the building: name; address; floor area; mega liters of water or sewage treated; amount of energy purchased in the form of electricity and natural gas; and GHG emissions. As seen in Figure \@ref(fig:feature-plot), there are significantly more reports in and after the year 2014 and the range of values reported is fairly large with values for GHG emissions somewhat evenly distributed on the logarithmic scale, but more concentrated at the upper end. The energy consumption, floor area, and GHG emissions are plotted on a logarithmic scale because these features vary most significantly in their order of magnitude.
 
 ```{r feature-plot, echo=FALSE, warning=FALSE, out.width='60%', fig.align='center', fig.width=8, fig.height=6, fig.cap='The figure shows reports for GHG emissions, electricity consumption, and floor area by year on a logarithmic scale. Each dot represents an operation that reported in the year specified on the x-axis.'}
+
+# create the ghg feature subplot
 ghg <- cleaned_geocoded |>
   ggplot(mapping = aes(x = year, y = ghg_emissions_kg, group=year)) +
   geom_boxplot() +
@@ -89,6 +85,7 @@ ghg <- cleaned_geocoded |>
   scale_y_continuous(trans='log', labels=function(x) sprintf("%.1e", x)) +
   theme(axis.text.y = element_text(angle = 60, vjust = 0.5, hjust=0.5))
 
+# create the electricity feature subplot
 ele <- cleaned_geocoded |>
   ggplot(mapping = aes(x = year, y = electricity_wh, group=year)) +
   geom_boxplot() +
@@ -101,6 +98,7 @@ ele <- cleaned_geocoded |>
   scale_y_continuous(trans='log', labels=function(x) sprintf("%.1e", x)) +
   theme(axis.text.y = element_text(angle = 60, vjust = 0.5, hjust=0.5))
 
+# create the floor area feature subplot
 flr <- cleaned_geocoded |>
   ggplot(mapping = aes(x = year, y = floor_area_sf, group=year)) +
   geom_boxplot() +
@@ -113,6 +111,8 @@ flr <- cleaned_geocoded |>
   scale_y_continuous(trans='log', labels=function(x) sprintf("%.1e", x)) +
   theme(axis.text.y = element_text(angle = 60, vjust = 0.5, hjust=0.5))
 
+
+# print the final composition of plots
 (ele + flr) / ghg
 ```
 
@@ -126,11 +126,13 @@ In order to identify which ward each building belongs to, the building coordinat
 The Annual Energy Consumption dataset is provided in the form of several `xlsx` spreadsheets with a preamble at the top and grouped cells that describe column labels. The top rows (including column labels) were discarded and columns were manually assigned the correct labels. Additionally, there was one file containing spreadsheets for the years 2011-2014 which had to be separated. There were several paired columns where one contained a number and the other contained a unit. These were appropriately converted to the same unit using standard unit conversions. Finally, some postal codes contained a space in the middle (e.g. `M4Y 0A9`) and some did not. For the purpose of geocoding, these had to be converted to the format with a space^[Regex: `[A-Z][0-9][A-Z] [0-9][A-Z][0-9]`].
 
 ```{r yearly-reps, echo=FALSE, fig.align='center'}
-# fig.cap='Number of yearly reports collected with the number of un-geocoded addresses shown by year.'
 
+# create a column for geocoding success/failure
 rgeo <- raw_geocoded |>
   mutate(geocode_succ = if_else(!is.na(longitude), 'success', 'failure'))
 
+
+# to generate a plot of what is in the table
 #rgeo |>
 #  ggplot(mapping = aes(x = year, fill=geocode_succ)) +
 #  geom_bar() +
@@ -141,12 +143,16 @@ rgeo <- raw_geocoded |>
 #    fill = 'Geocode status'
 #  )
 
+# group geocoding status and year and then reshape and add marginal distributions
 by_year = rgeo |>
   count(year, geocode_succ) |>
   dcast(geocode_succ ~ year, value.var=c('n')) |>
   adorn_totals(where=c('row', 'col'))
 
+# generate the table and use kableExtra to format it
 by_year |>
+  
+  # table body
   kable(
     col.names = c(c("Geocode status"), colnames(by_year)[2:9], 'Total'),
     booktabs = TRUE, 
@@ -154,6 +160,8 @@ by_year |>
     format.args = list(big.mark = ","),
     caption = 'The table shows the number of successful and unsuccessful gecoded addresses for each year.'
   ) |>
+  
+  # table formatting
   row_spec(2, hline_after=T) |>
   column_spec(10, border_left = TRUE, bold = TRUE)
 ```
@@ -161,15 +169,24 @@ by_year |>
 In order to identify which wards each building belongs to, they were geocoded by address, postal code, city, and country using OpenStreetMap [@osm]. There were `r length(unique(raw_geocoded$address_snth))` unique addresses, `r sum(is.na(raw_geocoded$latitude))` of which could not be geocoded for various reasons, such as `'Various addresses'` in the address column. In order to reduce the strain on the Nomination API, only unique addresses were geocoded which reduced the number of necessary calls to the API by `r nrow(raw_geocoded) - length(unique(raw_geocoded$address_snth))`. The number of yearly reports and a summary of the geocoding process can be seen in Table \@ref(tab:yearly-reps).
 
 ```{r ward-reps, echo=FALSE, out.width='70%', fig.align='center', fig.width=8, fig.height=4, fig.cap='The figure shows the number of reports each year for each ward. There is a significant increase in reports across all wards between 2013 and 2014.'}
+
+# count number of results in each ward in each year
 ward_by_year <- cleaned_geocoded |>
   count(ward, year)
   
+# plot the results submitted in each ward by each year
 ward_by_year |>
+  
+  # ggplot core
   ggplot(mapping = aes(x = year, y = n, color=ward)) +
   geom_point() +
   geom_line(alpha=0.25, size=1.1) +
+  
+  # theme
   theme_classic() +
   theme(legend.position = 'bottom', legend.text = element_text(size=7)) +
+  
+  # labels
   labs(
     x = 'Year',
     y = 'Number of reports',
@@ -187,10 +204,14 @@ Each building in the dataset was assigned a ward based on which ward's boundarie
 In Figure \@ref(fig:ghg-by-year) we can see that the total reported GHG emissions increases year after year with only some small decreases when the change in number of reports is low, but even between 2017 and 2018 where the number of reports does not change, the total reported amount of GHG emissions increases. It is likely that this is due to the wild changes in number of reports submitted by public agencies in Toronto and which buildings are submitting reports rather than a change in the underlying GHG emissions released in Toronto.
 
 ```{r ghg-by-year, echo=FALSE, out.width='70%', fig.align='center', fig.width=8, fig.height=3.5, fig.cap='The figure shows the total reported GHG emissions by year. Point size represents the increase in the number of reports, and color indicates an increase, decrease, or no change with respect to the number of reports.'}
+
+# calculate total ghg emissions in each year and the number of reports
 ghg_by_year <- cleaned_geocoded |>
   group_by(year) |>
   summarise(total_ghg = sum(ghg_emissions_kg), n = n())
 
+# find the change in number of reports per year and the change in ghg_emissions
+# add a column for direction of change in number of reports
 ghg_by_year <- ghg_by_year |>
   mutate(
     diff = n - (lag(ghg_by_year)$n |> replace_na(0)),
@@ -200,10 +221,15 @@ ghg_by_year <- ghg_by_year |>
                      TRUE ~ 'no change')
   )
 
+# plot ghg by year with infor for number of reports
 ghg_by_year |>
+  
+  # ggplot core
   ggplot(aes(x=year, y=total_ghg)) +
   geom_line(size=1.1, alpha=0.2) +
   geom_point(aes(color=ddir, size=diff_pct), alpha=0.5, stroke=0, shape=16) +
+  
+  # theme and labels
   theme_minimal() +
   labs(
     x = 'Year',
@@ -211,6 +237,8 @@ ghg_by_year |>
     color = 'Change in number of reports',
     size = 'Change in number of reports (%)'
   ) +
+  
+  # change the scale for point sizes and format as percent
   scale_size_continuous(range=c(2.5,6), labels=function(x) sprintf("%d%%", x))
 
 ```
@@ -223,9 +251,13 @@ In order to get a more clear sense of the GHG emission trends in Toronto, we can
 
 ```{r dghg-ward, echo=FALSE, out.width='70%', fig.align='center', fig.width=8, fig.height=4.5, fig.cap='In the figure, $\\Delta GHG_y$ is aggregared for each operation by ward and plotted against year. The figure gives insight into the change in total GHG emissions in each ward by year.'}
 
-# 
+# find change in ghg each year
 ghg_change <- cleaned_geocoded |>
+  
+  # remove duplicate reports (there is 1. probably on a corner of the ward)
   unique() |>
+  
+  # group by operation and find yearly ghg change
   group_by(operation_name) |>
   group_modify(function (.x, .y) {
     .x <- .x[order(.x$year),]
@@ -237,15 +269,24 @@ ghg_change <- cleaned_geocoded |>
       ) |>
       drop_na()
   }) |>
+  
+  # filter out operations that didn't report more than once
   filter(dy > 0)
 
+
+# plot yearly ghg change
 ghg_change |>
+  
+  # preprocess data
   group_by(year, ward) |>
   summarise(tot = sum(dghg), floor = sum(floor_area_sf), .groups = 'drop') |>
-  #filter(year >= 2015) |>
+  
+  # core ggplot
   ggplot(aes(x=year, y=tot, color=ward)) +
   geom_line(alpha=0.25, size=0.5) +
   geom_point(alpha=0.4) +
+  
+  # theme, ward labels on bottom, and labels
   theme_classic() +
   theme(legend.position = 'bottom', legend.text = element_text(size=7)) +
   labs(
@@ -264,7 +305,7 @@ In order to make it easier to examine the trends in GHG emissions from all opera
 ```{r sdghg-ward, echo=FALSE, out.width='70%', fig.align='center', fig.width=8, fig.height=4.5, fig.cap='In the figure, $\\Delta GHG_y$ is divided by the operation\'s floor area, aggregared for each operation by ward, and plotted against year. We can see more clearly the change in emissions for individual operations.'}
 ghg_change |>
   
-  # 
+  # preprocess data
   group_by(year, ward) |>
   summarise(
     tot = sum(dghg),
@@ -272,9 +313,13 @@ ghg_change |>
     ghg_var=var(dghg),
     dghg_range=max(dghg/floor_area_sf) - min(dghg/floor_area_sf),
     .groups = 'drop') |>
+  
+  # core ggplot
   ggplot(aes(x=year, y=tot / floor, color=ward, size=dghg_range)) +
   geom_line(alpha=0.15, size=1) +
   geom_point(alpha=0.3, size=1.5) +
+  
+  # theme, ward labels on bottom, and labels
   theme_classic() +
   theme(legend.position = 'bottom', legend.text = element_text(size=7), legend.direction='horizontal', legend.box='vertical') +
   labs(
@@ -338,8 +383,14 @@ ghg_2018 <- cum_ghg |>
 Figure \@ref(fig:cum-ghg) illustrates the cumulative reported GHG emissions from 2011 to 2018 in Toronto. Subplot A makes the compounding nature of the information shown in Figure \@ref(fig:ghg-by-year) abundantly clear. That is, even seemingly small or large, but individual increases in emissions lead to significant increases in the total amount of emissions when compounded over several years. We can see this concretely in the `r sprintf("%.0f%%", 100 * (ghg_2014 - ghg_2011) / ghg_2011)` increase in emissions between 2011 and 2014, and another `r sprintf("%.0f%%", 100 * (ghg_2018 - ghg_2014) / ghg_2014)` increase in emissions between 2014 and 2018 with a total change between 2011 and 2018 of `r sprintf("%.0f%%", 100 * (ghg_2018 - ghg_2011) / ghg_2011)`. We notice this significant change in emissions despite almost no change in operations' GHG emissions between 2014 and 2018 as seen in Figures \@ref(fig:dghg-ward) and \@ref(fig:sdghg-ward) as well as very little change in yearly emissions as seen Figure \@ref(fig:ghg-by-year).
 
 ```{r cum-ghg, echo=FALSE, out.width='100%', fig.align='center', fig.width=12, fig.height=5, fig.cap='In Figure A we can see the cumulative emissions for each ward stacked, so the total cumulative emissions are shown. In figure B we can see the cumulative emissions for each ward shown on a choropleth.'}
+
+# create plot for total ghg change and plot map
 tot_change_map <- ward_shp |>
+  
+  # jion with ward geometries
   left_join(cleaned_geocoded |>
+              
+    # preprocess data
     complete(ward, year) |>
     mutate(ghg_emissions_kg = if_else(is.na(ghg_emissions_kg), 0, ghg_emissions_kg)) |>
     group_by(year, ward) |>
@@ -347,12 +398,18 @@ tot_change_map <- ward_shp |>
     filter(year %in% c(2011, 2013, 2014, 2018)),
     by='ward'
    ) |>
+  
+  # core ggplot
   ggplot(aes(fill=tot_ghg)) +
   geom_sf(color=alpha('black', 0.05), lwd=0.25) +
+  
+  # change color scheme and facet wrap for subplots
   scale_fill_distiller(palette = "YlOrBr", direction=1) +
+  facet_wrap(vars(year), ncol=2) +
+  
+  # theme, angle x axis, adjust legend, and add labels
   theme_classic() +
   theme(axis.text.x= element_text(angle=45, vjust = 0.5, hjust=0.5)) +
-  facet_wrap(vars(year), ncol=2) +
   theme(legend.position = 'bottom', legend.text = element_text(angle=45, vjust = 0.5, hjust=0.5)) +
   labs(
     x = 'Longitude',
@@ -361,10 +418,18 @@ tot_change_map <- ward_shp |>
     title = 'B'
   )
 
+
+# plot stacked area for cumulative ghg emissions
 tot_change_area <- cum_ghg |>
+  
+  # preprocess data
   mutate(ward = fct_reorder(ward, desc(-tot_emiss))) |>
+  
+  # core ggplot
   ggplot(aes(x=year, y=cum_ghg, fill=ward)) +
   geom_area(color=alpha('white', 0.15), lwd=0.2) +
+  
+  # theme, ward labels on bottom, and labels
   theme_classic() +
   theme(legend.position = 'bottom', legend.text = element_text(size=6), legend.direction='horizontal', legend.box='vertical') +
   labs(
@@ -375,6 +440,8 @@ tot_change_area <- cum_ghg |>
     title = 'A'
   )
 
+
+# print the final compilation of plots
 tot_change_area + tot_change_map +
   plot_layout(widths = c(3, 2))
 ```
@@ -417,6 +484,7 @@ cumulative_dghg <- ward_shp |>
     by='ward'
   )
 
+# get the ward that had highest decrease in emissions to use as example
 best_ward <- (cumulative_dghg |>
   mutate(pdg = cum_dghg / tot_ghg) |>
   filter(year == 2018, pdg <= 0.1 + min(pdg)))$ward
@@ -428,15 +496,23 @@ We can also look at the cumulative change in GHG emissions to assess the total i
 ```{r cum-ghg-change, echo=FALSE, out.width='100%', fig.align='center', fig.width=12, fig.height=5, fig.cap='The figure shows a coropleth of the cumulative change in GHG emissions as a percentage of the cumulative emissions in that year. This shows how much each ward has improved their emissions relative to their emissions in the year of interest.'}
 # plot cumulative delta ghg on a map for years of interest
 cumulative_dghg |>
+  
+  # core ggplot
   ggplot(aes(fill=cum_dghg / tot_ghg)) +
   geom_sf() +
+  
+  # facet wrap around year for subplots
   facet_wrap(vars(year)) +
+  
+  # color scheme
   scale_fill_distiller(
     palette = "Spectral",
     direction=-1,
     limits=c(-1, 1) * max(abs(cumulative_dghg$cum_dghg / cumulative_dghg$tot_ghg)),
     labels=function(x) sprintf("%.0f%%", 100 * x)
   ) +
+  
+  # theme, x axis tilt, and labels
   theme_classic() +
   theme(axis.text.x= element_text(angle=45, vjust = 0.5, hjust=0.5)) +
   facet_wrap(vars(year), ncol=2) +
